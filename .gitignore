@@ -1,0 +1,37 @@
+# API keys and secret files
+.env
+.env.*
+!.env.example
+*.key
+
+# Raw and processed datasets
+data/raw/
+data/processed/
+
+# Large dataset files
+*.zip
+*.xml
+*.parquet
+*.csv
+
+# Python files
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Jupyter temporary files
+.ipynb_checkpoints/
+
+# Spark temporary files
+spark-warehouse/
+metastore_db/
+derby.log
+*.log
+
+# macOS files
+.DS_Store
+
+# Confidential assignment files
+*Assignment Brief*.pdf
+*Sample Template*.pdf
