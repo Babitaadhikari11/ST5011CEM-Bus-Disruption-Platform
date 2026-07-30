@@ -35,3 +35,5 @@ derby.log
 # Confidential assignment files
 *Assignment Brief*.pdf
 *Sample Template*.pdf
+
+.streamlit/secrets.toml
