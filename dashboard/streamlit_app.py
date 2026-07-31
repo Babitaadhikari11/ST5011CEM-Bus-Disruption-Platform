@@ -26,6 +26,7 @@ st.set_page_config(
 DASHBOARD_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = DASHBOARD_ROOT.parent
 DATA_FILE = DASHBOARD_ROOT / "dashboard_data.json"
+ROUTE_PATHS_FILE = DASHBOARD_ROOT / "route_paths.json"
 
 load_dotenv(
     PROJECT_ROOT
@@ -392,6 +393,27 @@ def load_dashboard_data(
     file_path: str,
     modified_time: float
 ) -> dict[str, Any]:
+    del modified_time
+
+    path = Path(
+        file_path
+    )
+
+    return json.loads(
+        path.read_text(
+            encoding="utf-8"
+        )
+    )
+
+
+
+@st.cache_data(
+    show_spinner=False
+)
+def load_route_paths(
+    file_path: str,
+    modified_time: float
+) -> list[dict[str, Any]]:
     del modified_time
 
     path = Path(
@@ -896,11 +918,134 @@ def prepare_live_points(
     ]
 
 
+
+def prepare_route_paths(
+    route_paths: pd.DataFrame,
+    selected_route: str
+) -> pd.DataFrame:
+    if route_paths.empty:
+        return pd.DataFrame()
+
+    route_value = str(
+        selected_route
+    ).strip()
+
+    if not route_value:
+        return pd.DataFrame()
+
+    paths = route_paths[
+        route_paths[
+            "route"
+        ]
+        .astype(
+            str
+        )
+        .str.strip()
+        .str.casefold()
+        ==
+        route_value.casefold()
+    ].copy()
+
+    if paths.empty:
+        return paths
+
+    paths[
+        "direction_id"
+    ] = paths[
+        "direction_id"
+    ].fillna(
+        "unknown"
+    ).astype(
+        str
+    )
+
+    direction_colours = {
+        "0": [
+            124,
+            58,
+            237,
+            230
+        ],
+        "1": [
+            6,
+            182,
+            212,
+            230
+        ]
+    }
+
+    paths[
+        "colour"
+    ] = paths[
+        "direction_id"
+    ].apply(
+        lambda direction: direction_colours.get(
+            direction,
+            [
+                37,
+                99,
+                235,
+                230
+            ]
+        )
+    )
+
+    paths[
+        "marker_type"
+    ] = "Scheduled GTFS route"
+
+    paths[
+        "direction"
+    ] = paths[
+        "direction_id"
+    ].replace(
+        {
+            "0": "GTFS direction 0",
+            "1": "GTFS direction 1"
+        }
+    )
+
+    paths[
+        "vehicle_ref"
+    ] = "-"
+
+    paths[
+        "destination"
+    ] = "-"
+
+    paths[
+        "severity"
+    ] = "-"
+
+    paths[
+        "risk_display"
+    ] = "-"
+
+    paths[
+        "priority_score_display"
+    ] = "-"
+
+    paths[
+        "priority"
+    ] = "-"
+
+    paths[
+        "recorded_at"
+    ] = "-"
+
+    paths[
+        "age_display"
+    ] = "-"
+
+    return paths
+
+
 def make_map(
     priority_points: pd.DataFrame,
-    live_points: pd.DataFrame
+    live_points: pd.DataFrame,
+    route_paths: pd.DataFrame
 ) -> pdk.Deck:
-    frames = [
+    point_frames = [
         dataframe
         for dataframe in [
             priority_points,
@@ -909,12 +1054,60 @@ def make_map(
         if not dataframe.empty
     ]
 
-    if frames:
+    if point_frames:
         points = pd.concat(
-            frames,
+            point_frames,
             ignore_index=True
         )
 
+    else:
+        points = pd.DataFrame()
+
+    route_coordinates = []
+
+    if not route_paths.empty:
+        for route_path in route_paths[
+            "path"
+        ]:
+            if not isinstance(
+                route_path,
+                list
+            ):
+                continue
+
+            for coordinate in route_path:
+                if (
+                    isinstance(
+                        coordinate,
+                        list
+                    )
+                    and
+                    len(
+                        coordinate
+                    ) >= 2
+                ):
+                    route_coordinates.append(
+                        coordinate
+                    )
+
+    if route_coordinates:
+        longitude = sum(
+            coordinate[0]
+            for coordinate in route_coordinates
+        ) / len(
+            route_coordinates
+        )
+
+        latitude = sum(
+            coordinate[1]
+            for coordinate in route_coordinates
+        ) / len(
+            route_coordinates
+        )
+
+        zoom = 11.5
+
+    elif not points.empty:
         latitude = float(
             points[
                 "latitude"
@@ -927,33 +1120,58 @@ def make_map(
             ].mean()
         )
 
+        zoom = 9.5
+
     else:
-        points = pd.DataFrame()
         latitude = 52.4862
         longitude = -1.8904
+        zoom = 9.5
 
-    layer = pdk.Layer(
-        "ScatterplotLayer",
-        data=points,
-        get_position=[
-            "longitude",
-            "latitude"
-        ],
-        get_fill_color="colour",
-        get_line_color=[
-            255,
-            255,
-            255,
-            220
-        ],
-        get_radius="radius",
-        radius_min_pixels=3,
-        radius_max_pixels=15,
-        line_width_min_pixels=1,
-        pickable=True,
-        filled=True,
-        stroked=True
-    )
+    layers = []
+
+    if not route_paths.empty:
+        route_layer = pdk.Layer(
+            "PathLayer",
+            data=route_paths,
+            get_path="path",
+            get_color="colour",
+            get_width=6,
+            width_min_pixels=4,
+            width_max_pixels=10,
+            pickable=True
+        )
+
+        layers.append(
+            route_layer
+        )
+
+    if not points.empty:
+        point_layer = pdk.Layer(
+            "ScatterplotLayer",
+            data=points,
+            get_position=[
+                "longitude",
+                "latitude"
+            ],
+            get_fill_color="colour",
+            get_line_color=[
+                255,
+                255,
+                255,
+                220
+            ],
+            get_radius="radius",
+            radius_min_pixels=3,
+            radius_max_pixels=15,
+            line_width_min_pixels=1,
+            pickable=True,
+            filled=True,
+            stroked=True
+        )
+
+        layers.append(
+            point_layer
+        )
 
     tooltip = {
         "html": """
@@ -981,12 +1199,10 @@ def make_map(
         initial_view_state=pdk.ViewState(
             latitude=latitude,
             longitude=longitude,
-            zoom=9.5,
+            zoom=zoom,
             pitch=0
         ),
-        layers=[
-            layer
-        ],
+        layers=layers,
         tooltip=tooltip
     )
 
@@ -1030,6 +1246,20 @@ routes_df = pd.DataFrame(
         []
     )
 )
+
+
+if ROUTE_PATHS_FILE.exists():
+    route_paths_df = pd.DataFrame(
+        load_route_paths(
+            str(
+                ROUTE_PATHS_FILE
+            ),
+            ROUTE_PATHS_FILE.stat().st_mtime
+        )
+    )
+
+else:
+    route_paths_df = pd.DataFrame()
 
 kpis = saved_data.get(
     "kpis",
@@ -1230,6 +1460,7 @@ with map_column:
 
     st.markdown(
         '<div class="legend-row">'
+        '<span><i class="legend-dot" style="background:#7c3aed"></i>Scheduled route</span>'
         '<span><i class="legend-dot" style="background:#2563eb"></i>Near-live bus</span>'
         '<span><i class="legend-dot" style="background:#22a34a"></i>Low</span>'
         '<span><i class="legend-dot" style="background:#d97706"></i>Medium</span>'
@@ -1241,6 +1472,11 @@ with map_column:
 
     priority_points = prepare_priority_points(
         filtered_routes
+    )
+
+    selected_route_paths = prepare_route_paths(
+        route_paths_df,
+        route_search
     )
 
 
@@ -1330,7 +1566,8 @@ with map_column:
         st.pydeck_chart(
             make_map(
                 priority_points,
-                live_points
+                live_points,
+                selected_route_paths
             ),
             width="stretch",
             height=560
@@ -1564,7 +1801,7 @@ with table_column:
 
 
 st.caption(
-    "Blue points are near-live vehicle positions. "
-    "Coloured points are the latest saved route-recovery locations. "
-    "These are representative locations, not full route lines."
+    "Purple and cyan lines show scheduled GTFS route paths. "
+    "Blue points show near-live vehicle positions. "
+    "Other coloured points show saved route-recovery locations."
 )

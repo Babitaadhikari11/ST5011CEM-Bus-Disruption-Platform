@@ -39,3 +39,4 @@ derby.log
 .streamlit/secrets.toml
 
 database/*.db
+old_dasbhoard/
